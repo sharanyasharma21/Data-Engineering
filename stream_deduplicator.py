@@ -118,3 +118,34 @@ def highest_quality_score_by_normalized_text(records):
 
     return best_records
 
+# Windowed dedup record with TTL
+# return non duplicate customer_ids in a 60 second interval
+
+import time
+
+def windowed_dedup_with_ttl(records, ttl_seconds=60):
+    best_records = {}   # key -> record
+    expiry_times = {}   # key -> unix timestamp when this entry expires
+
+    now = int(time.time())
+
+    for record in records:
+        record_id = record["id"]
+        record_ts = record["timestamp"]
+
+        # evict expired entries before processing
+        expired_keys = [k for k, exp in expiry_times.items() if now > exp]
+        for k in expired_keys:
+            del best_records[k]
+            del expiry_times[k]
+
+        if record_id not in best_records:
+            best_records[record_id] = record
+            expiry_times[record_id] = record_ts + ttl_seconds  # TTL anchored to record time
+        else:
+            if record["payload"]["quality_score"] > best_records[record_id]["payload"]["quality_score"]:
+                best_records[record_id] = record
+                expiry_times[record_id] = record_ts + ttl_seconds  # reset TTL on update
+
+    return best_records
+
